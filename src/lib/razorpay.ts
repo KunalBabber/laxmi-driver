@@ -3,8 +3,10 @@
  * Key ID: rzp_test_TnmKLDYEjFQAYF
  */
 
+import { createRazorpayOrder } from "./razorpay.server";
+
 export const RAZORPAY_KEY_ID =
-  (import.meta.env.VITE_RAZORPAY_KEY_ID as string) || "rzp_test_TnmKLDYEjFQAYF";
+  (import.meta.env.VITE_RAZORPAY_KEY_ID as string) || "rzp_test_TdVXL0e3vXa5VQ";
 
 export interface RazorpaySuccessResponse {
   razorpay_payment_id: string;
@@ -82,17 +84,39 @@ export async function openRazorpayCheckout({
   // Razorpay takes amount in paise (1 INR = 100 paise)
   const amountInPaise = Math.round(amount * 100);
 
-  const options = {
+  // Generate official Razorpay Order ID on server to unlock NPCI UPI (GPay, PhonePe, Paytm, QR Code)
+  let orderId: string | undefined;
+  try {
+    const orderRes = await createRazorpayOrder({
+      data: {
+        amount,
+        receipt: `rcpt_${Date.now()}`,
+        notes: {
+          purpose,
+          learner_name: learnerName,
+          mobile,
+        },
+      },
+    });
+    if (orderRes?.orderId) {
+      orderId = orderRes.orderId;
+    }
+  } catch (err) {
+    console.warn("Server order generation notice:", err);
+  }
+
+  const options: Record<string, unknown> = {
     key: RAZORPAY_KEY_ID,
     amount: amountInPaise,
     currency: "INR",
+    ...(orderId ? { order_id: orderId } : {}),
     name: "Laxmi Driving Training",
     description: `${purpose} - ₹${amount}`,
     image: "/favicon.png",
     prefill: {
       name: learnerName || undefined,
       contact: mobile ? mobile.replace(/\D/g, "").slice(-10) : undefined,
-      email: email || undefined,
+      email: email || "customer@laxmidriving.com",
     },
     notes: {
       purpose,
@@ -101,7 +125,7 @@ export async function openRazorpayCheckout({
       ...notes,
     },
     theme: {
-      color: "#e11d48", // matches primary brand red/crimson
+      color: "#1E40E7", // matches primary brand blue
     },
     handler: function (response: RazorpaySuccessResponse) {
       onSuccess?.(response);

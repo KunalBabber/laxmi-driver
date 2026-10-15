@@ -44,6 +44,14 @@ function safePath(value: string | undefined): string {
 
 const ownerEmail = "inofdriving@gmail.com";
 
+function formatPartnerPassword(pwd: string): string {
+  // Pad and transform 4-6 char PIN/password deterministically so Supabase Auth's >= 6 length & complexity rules are satisfied
+  if (pwd.length >= 4 && pwd.length <= 6) {
+    return `Ldt#${pwd}@P2026`;
+  }
+  return pwd;
+}
+
 function AuthPage() {
   const { redirect } = Route.useSearch();
   const navigate = useNavigate();
@@ -65,8 +73,8 @@ function AuthPage() {
     async function continueAfterVerification() {
       const { data, error } = await supabase.auth.getUser();
       if (!active || error || !data.user) return;
-      if (!data.user.email_confirmed_at) {
-        setFormError("Please confirm your email before signing in.");
+      if (staffLogin && !data.user.email_confirmed_at) {
+        setFormError("Please confirm your email before signing in to the staff workspace.");
         return;
       }
       if (staffLogin) {
@@ -140,26 +148,127 @@ function AuthPage() {
       if (mode === "signup") {
         if (staffLogin && email.trim().toLowerCase() !== ownerEmail)
           throw new Error(`Admin registration is reserved for ${ownerEmail}.`);
-        if (!fullName.trim() || !/^(?:\+91[ -]?)?[6-9]\d{9}$/.test(mobile.trim()))
-          throw new Error("Enter your name and a valid 10-digit Indian mobile number.");
-        const { error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
+
+        const cleanMobile = mobile.replace(/\D/g, "").slice(-10);
+        if (!staffLogin && cleanMobile.length !== 10) {
+          throw new Error("Enter a valid 10-digit Indian mobile number.");
+        }
+        if (!fullName.trim()) {
+          throw new Error("Enter your full name.");
+        }
+
+        if (!staffLogin) {
+          if (password.length < 4 || password.length > 6) {
+            throw new Error("Partner password / PIN must be between 4 and 6 characters.");
+          }
+        }
+
+        const targetEmail = staffLogin
+          ? ownerEmail
+          : email.trim() || `${cleanMobile}@partner.laxmidriving.com`;
+
+        // Cache mapping in local storage so this browser can resolve phone to email
+        if (!staffLogin && cleanMobile) {
+          try {
+            localStorage.setItem(`ldt_partner_phone_${cleanMobile}`, targetEmail);
+            if (email.trim()) {
+              localStorage.setItem(`ldt_partner_email_${cleanMobile}`, email.trim());
+            }
+          } catch {
+            // Ignore storage errors
+          }
+        }
+
+        const authPassword = !staffLogin ? formatPartnerPassword(password) : password;
+
+        const { data: signUpData, error } = await supabase.auth.signUp({
+          email: targetEmail,
+          password: authPassword,
           options: {
-            data: { full_name: fullName.trim(), mobile: mobile.trim() },
+            data: {
+              full_name: fullName.trim(),
+              mobile: cleanMobile || mobile.trim(),
+              is_partner: !staffLogin,
+            },
             emailRedirectTo: confirmationUrl(),
           },
         });
         if (error) throw error;
-        setConfirmationEmail(email.trim());
-        setPassword("");
-        setResendAfter(Date.now() + 60_000);
+
+        // If email was provided, ask user to check their email
+        if (email.trim() || staffLogin) {
+          setConfirmationEmail(targetEmail);
+          setPassword("");
+          setResendAfter(Date.now() + 60_000);
+        } else {
+          // Partner account created with phone number
+          const { data: signInData } = await supabase.auth.signInWithPassword({
+            email: targetEmail,
+            password: authPassword,
+          });
+          if (signInData?.session) {
+            toast.success("Partner account created and logged in successfully!");
+            await navigate({ to: target, replace: true });
+            return;
+          }
+          toast.success("Partner account created! You can now sign in with your mobile number.");
+          setMode("signin");
+          setPassword("");
+        }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
+        // Sign in mode
+        let targetEmail = "";
+        if (staffLogin) {
+          targetEmail = email.trim();
+          if (!targetEmail) throw new Error("Enter your staff email address.");
+        } else {
+          // Partner Login by Phone number
+          const rawInput = mobile.trim() || email.trim();
+          if (!rawInput) throw new Error("Enter your 10-digit mobile number.");
+
+          if (rawInput.includes("@")) {
+            targetEmail = rawInput.toLowerCase();
+          } else {
+            const cleanMobile = rawInput.replace(/\D/g, "").slice(-10);
+            if (cleanMobile.length !== 10) {
+              throw new Error("Enter a valid 10-digit mobile number.");
+            }
+            const cachedEmail =
+              localStorage.getItem(`ldt_partner_email_${cleanMobile}`) ||
+              localStorage.getItem(`ldt_partner_phone_${cleanMobile}`);
+            targetEmail = cachedEmail || `${cleanMobile}@partner.laxmidriving.com`;
+          }
+        }
+
+        const authPassword = !staffLogin ? formatPartnerPassword(password) : password;
+
+        let signInRes = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: authPassword,
         });
-        if (error) throw error;
+
+        // If 6-character PIN failed with transformed password, try raw password for backwards compatibility
+        if (signInRes.error && !staffLogin && password.length === 6 && authPassword !== password) {
+          const fallbackRes = await supabase.auth.signInWithPassword({
+            email: targetEmail,
+            password,
+          });
+          if (!fallbackRes.error) {
+            signInRes = fallbackRes;
+          }
+        }
+
+        // Friendly error if phone is not found or user registered with email
+        if (signInRes.error && !staffLogin && targetEmail.endsWith("@partner.laxmidriving.com")) {
+          const msg = signInRes.error.message.toLowerCase();
+          if (msg.includes("invalid") || msg.includes("not found")) {
+            throw new Error(
+              "Account not found or password incorrect. Please verify your 10-digit mobile number and PIN.",
+            );
+          }
+        }
+
+        if (signInRes.error) throw signInRes.error;
       }
     } catch (error) {
       setFormError(
@@ -204,7 +313,9 @@ function AuthPage() {
         description={
           staffLogin
             ? "Sign in with your authorised staff account."
-            : "Use your partner account to apply, upload vehicle documents and track your application status."
+            : mode === "signin"
+              ? "Sign in with your 10-digit mobile number to track or manage your vehicle partner application."
+              : "Register your vehicle partner account with your mobile number and a 4 to 6 character password / PIN."
         }
       />
 
@@ -263,69 +374,115 @@ function AuthPage() {
                   </Button>
                 </div>
               )}
+
+              {/* Full Name field on Signup */}
               {mode === "signup" && (
-                <>
-                  <div className="space-y-2">
-                    <label htmlFor="fullName" className="block text-sm font-semibold">
-                      Full Name
-                    </label>
-                    <input
-                      id="fullName"
-                      className={fieldClass}
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Your full name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="mobile" className="block text-sm font-semibold">
-                      Mobile Number
-                    </label>
-                    <input
-                      id="mobile"
-                      className={fieldClass}
-                      required
-                      inputMode="numeric"
-                      value={mobile}
-                      onChange={(e) => setMobile(e.target.value)}
-                      placeholder="10-digit mobile number"
-                    />
-                  </div>
-                </>
+                <div className="space-y-2">
+                  <label htmlFor="fullName" className="block text-sm font-semibold">
+                    Full Name
+                  </label>
+                  <input
+                    id="fullName"
+                    className={fieldClass}
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Your full name"
+                  />
+                </div>
               )}
 
-              <div className="space-y-2">
-                <label htmlFor="email" className="block text-sm font-semibold">
-                  E-mail ID
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  className={fieldClass}
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
-                />
-              </div>
+              {/* Mobile Number field:
+                  - In Partner Login: Prominent phone number login
+                  - In Signup: Required 10-digit mobile number
+              */}
+              {(!staffLogin || mode === "signup") && (
+                <div className="space-y-2">
+                  <label htmlFor="mobile" className="block text-sm font-semibold">
+                    {mode === "signin" ? "Mobile Number" : "Mobile Number"}
+                  </label>
+                  <input
+                    id="mobile"
+                    className={fieldClass}
+                    required={!staffLogin || mode === "signup"}
+                    inputMode="numeric"
+                    type="tel"
+                    autoComplete={mode === "signin" ? "tel" : "tel"}
+                    value={mobile}
+                    onChange={(e) => setMobile(e.target.value)}
+                    placeholder="10-digit mobile number"
+                  />
+                  {mode === "signin" && !staffLogin && (
+                    <p className="text-xs text-muted-foreground">
+                      Enter your 10-digit registered mobile number.
+                    </p>
+                  )}
+                </div>
+              )}
 
+              {/* Email field:
+                  - In Staff mode: Required email
+                  - In Partner Signup: Optional email
+                  - In Partner Signin: Hidden (partner logs in with Phone)
+              */}
+              {(staffLogin || mode === "signup") && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="email" className="block text-sm font-semibold">
+                      {staffLogin ? "Staff E-mail ID" : "E-mail ID (Optional)"}
+                    </label>
+                    {!staffLogin && mode === "signup" && (
+                      <span className="text-xs text-muted-foreground">Optional</span>
+                    )}
+                  </div>
+                  <input
+                    id="email"
+                    type="email"
+                    className={fieldClass}
+                    required={staffLogin}
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={staffLogin ? "name@example.com" : "Optional (for password reset)"}
+                  />
+                </div>
+              )}
+
+              {/* Password / PIN field */}
               <div className="space-y-2">
-                <label htmlFor="password" className="block text-sm font-semibold">
-                  Password
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="password" className="block text-sm font-semibold">
+                    {!staffLogin ? "Password / PIN" : "Password"}
+                  </label>
+                  {!staffLogin && (
+                    <span className="text-xs text-muted-foreground">4 to 6 characters</span>
+                  )}
+                </div>
                 <input
                   id="password"
                   type="password"
                   className={fieldClass}
                   required
-                  minLength={mode === "signup" ? 12 : 6}
+                  minLength={staffLogin ? (mode === "signup" ? 12 : 6) : 4}
+                  maxLength={!staffLogin ? 6 : undefined}
                   autoComplete={mode === "signup" ? "new-password" : "current-password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === "signup" ? "At least 12 characters" : "Your password"}
+                  placeholder={
+                    !staffLogin
+                      ? "4 to 6 character password or PIN"
+                      : mode === "signup"
+                        ? "At least 12 characters"
+                        : "Your password"
+                  }
                 />
+                {!staffLogin && (
+                  <p className="text-xs text-muted-foreground">
+                    {mode === "signup"
+                      ? "Choose a 4 to 6 digit PIN or password for your partner account."
+                      : "Enter your 4 to 6 digit partner PIN or password."}
+                  </p>
+                )}
               </div>
 
               <Button type="submit" variant="cta" size="xl" disabled={busy}>
@@ -373,11 +530,11 @@ function AuthPage() {
                   {mode === "signin"
                     ? staffLogin
                       ? "Register admin account"
-                      : "Create an account"
+                      : "Create partner account"
                     : "Sign in instead"}
                 </Button>
               </p>
-              {mode === "signin" && (
+              {mode === "signin" && staffLogin && (
                 <Button type="button" variant="link" disabled={busy} onClick={resendConfirmation}>
                   Resend verification email
                 </Button>

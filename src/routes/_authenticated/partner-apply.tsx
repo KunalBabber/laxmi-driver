@@ -92,12 +92,12 @@ const mobileRe = /^[6-9]\d{9}$/;
 function validate(step: number, f: Form, files: Record<string, File>): string | null {
   const need = (keys: FormKey[]) => keys.find((k) => !f[k].trim());
   if (step === 0) {
-    if (need(["full_name", "mobile", "email", "address", "city", "district", "state", "pincode"]))
+    if (need(["full_name", "mobile", "address", "city", "district", "state", "pincode"]))
       return "Please fill all required fields.";
     if (!mobileRe.test(f.mobile)) return "Enter a valid 10-digit mobile number.";
     if (f.alternate_mobile && !mobileRe.test(f.alternate_mobile))
       return "Alternate mobile is not valid.";
-    if (!/^\S+@\S+\.\S+$/.test(f.email)) return "Enter a valid e-mail ID.";
+    if (f.email.trim() && !/^\S+@\S+\.\S+$/.test(f.email)) return "Enter a valid e-mail ID.";
     if (!/^\d{6}$/.test(f.pincode)) return "PIN code must be 6 digits.";
   }
   if (step === 1) {
@@ -440,7 +440,7 @@ function PartnerApply() {
           <Grid>
             <In label="Full Name *" k="full_name" f={f} set={set} />
             <In label="Mobile Number *" k="mobile" f={f} set={set} type="tel" />
-            <In label="E-mail ID *" k="email" f={f} set={set} type="email" />
+            <In label="E-mail ID (Optional)" k="email" f={f} set={set} type="email" />
             <In label="Alternate Mobile" k="alternate_mobile" f={f} set={set} type="tel" />
             <In label="Full Address *" k="address" f={f} set={set} wide />
             <In label="City *" k="city" f={f} set={set} />
@@ -637,7 +637,7 @@ function PaymentBox({ f, set }: { f: Form; set: (k: FormKey, v: string) => void 
       purpose: "Partner Enrollment Advance Deposit",
       learnerName: f.full_name || "Partner Applicant",
       mobile: f.mobile,
-      email: f.email,
+      email: f.email || "partner@laxmidriving.com",
       description: `Laxmi Driving Training - Partner Advance ₹${DEPOSIT_AMOUNT}`,
       onSuccess: (res) => {
         setPaying(false);
@@ -655,13 +655,13 @@ function PaymentBox({ f, set }: { f: Form; set: (k: FormKey, v: string) => void 
   }
 
   return (
-    <div className="mt-6 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 p-5 text-left text-sm space-y-3">
+    <div className="mt-6 rounded-2xl border-2 border-primary/30 bg-primary/[0.03] p-5 text-left text-sm space-y-4">
       <div className="flex items-center justify-between">
         <p className="font-bold text-base text-foreground">
           ₹{DEPOSIT_AMOUNT.toLocaleString("en-IN")} Partner Enrollment Advance Deposit
         </p>
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary">
-          Razorpay Gateway
+          Razorpay Secure
         </span>
       </div>
 
@@ -670,39 +670,46 @@ function PaymentBox({ f, set }: { f: Form; set: (k: FormKey, v: string) => void 
           <p className="font-bold flex items-center gap-1.5">
             <CheckCircle2 className="size-4" /> Advance Payment Recorded
           </p>
-          <p className="font-mono text-xs text-foreground">Transaction ID: {f.payment_reference}</p>
+          <p className="font-mono text-xs text-foreground">
+            Transaction / Payment ID: {f.payment_reference}
+          </p>
         </div>
       ) : (
-        <>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Pay the refundable advance securely online using UPI (Google Pay, PhonePe, Paytm),
-            Debit/Credit Card, or NetBanking.
-          </p>
+        <div className="space-y-2">
           <Button
             type="button"
             variant="cta"
-            size="sm"
+            size="lg"
             disabled={paying}
             onClick={handlePay}
-            className="w-full sm:w-auto"
+            className="w-full text-base font-bold py-6 shadow-md"
           >
             {paying ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Razorpay…
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Processing Razorpay…
               </>
             ) : (
               <>
-                <CreditCard className="mr-2 h-4 w-4" /> Pay ₹
-                {DEPOSIT_AMOUNT.toLocaleString("en-IN")} via Razorpay
+                <CreditCard className="mr-2 h-5 w-5" /> Pay ₹
+                {DEPOSIT_AMOUNT.toLocaleString("en-IN")} with Razorpay
               </>
             )}
           </Button>
-        </>
+          <p className="text-xs text-muted-foreground text-center">
+            ⚡ Instant payment via Razorpay. Supports <strong>UPI (GPay, PhonePe, Paytm, QR Code)</strong>, Cards & NetBanking.
+          </p>
+        </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Securely processed by Razorpay. Refunds and adjustments are governed by the Partner Terms.
-      </p>
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-1 text-[11px] text-muted-foreground border-t border-border/50">
+        <span className="flex items-center gap-1">
+          <CheckCircle2 className="size-3.5 text-emerald-600" /> 256-bit SSL Secure
+        </span>
+        <span>•</span>
+        <span>UPI / QR / Cards / NetBanking</span>
+        <span>•</span>
+        <span className="font-semibold text-foreground/80">Laxmi Driving Training Verified</span>
+      </div>
     </div>
   );
 }

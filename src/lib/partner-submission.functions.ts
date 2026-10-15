@@ -7,7 +7,13 @@ const text = z.string().trim().min(1).max(300);
 const details = z.object({
   full_name: text,
   mobile: z.string().regex(/^[6-9]\d{9}$/),
-  email: z.string().email().max(254),
+  email: z
+    .string()
+    .max(254)
+    .refine((val) => !val || z.string().email().safeParse(val).success, {
+      message: "Invalid email format",
+    })
+    .default(""),
   alternate_mobile: z.string().max(10),
   address: text,
   city: text,

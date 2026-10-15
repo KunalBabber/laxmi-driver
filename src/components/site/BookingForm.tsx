@@ -36,7 +36,7 @@ function validate(v: BookingValues): Errors {
   if (v.fullName.trim().length < 3) e.fullName = "Please enter your full name.";
   if (!/^[6-9]\d{9}$/.test(v.mobile.replace(/\D/g, "").slice(-10)))
     e.mobile = "Enter a valid 10-digit Indian mobile number.";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim()))
+  if (v.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim()))
     e.email = "Enter a valid e-mail ID, for example name@gmail.com.";
   if (!v.vehicleType) e.vehicleType = "Please choose Car, Auto, Bike or Scooter.";
   if (!v.experience) e.experience = "Please choose your experience level.";
@@ -51,7 +51,7 @@ async function submitBooking(values: BookingValues): Promise<void> {
   const { error } = await supabase.from("lesson_bookings").insert({
     full_name: values.fullName.trim(),
     mobile: values.mobile.trim(),
-    email: values.email.trim(),
+    email: values.email.trim() || "",
     vehicle_type: values.vehicleType,
     experience: values.experience,
     preferred_date: values.date,
@@ -73,6 +73,8 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
   const [errors, setErrors] = useState<Errors>({});
   const [status, setStatus] = useState<"idle" | "sending" | "done">("idle");
   const [submitError, setSubmitError] = useState("");
+  const [bookingRef, setBookingRef] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const set = <K extends keyof BookingValues>(key: K, value: BookingValues[K]) => {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -92,6 +94,8 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
     setSubmitError("");
     try {
       await submitBooking(values);
+      const generatedRef = "LDT-BK-" + Math.floor(100000 + Math.random() * 900000);
+      setBookingRef(generatedRef);
       setStatus("done");
     } catch {
       setSubmitError("Your request could not be saved. Please try again or call us.");
@@ -100,34 +104,94 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
   }
 
   if (status === "done") {
+    const confirmationText = `🚗 *LAXMI DRIVING TRAINING - BOOKING CONFIRMATION*\n\nHello *${values.fullName}*!\nYour driving lesson enquiry has been confirmed.\n\n📌 *Booking Details:*\n• Booking Ref: ${bookingRef}\n• Vehicle: ${values.vehicleType} Training\n• Experience Level: ${values.experience}\n• Preferred Date: ${values.date}\n• Preferred Time: ${values.time}\n• Contact Mobile: ${values.mobile}\n• Payment Option: ${values.paymentChoice}\n\n📞 Our instructor will call you shortly on ${values.mobile} to confirm batch & pickup.\nHelpline: ${site.phoneDisplay}`;
+
+    const handleCopy = () => {
+      navigator.clipboard.writeText(confirmationText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    };
+
     return (
       <div
         role="status"
         aria-live="polite"
-        className="card-surface animate-fade-up flex flex-col items-center gap-4 p-8 text-center"
+        className="card-surface animate-fade-up flex flex-col items-center gap-5 p-6 sm:p-8 text-center"
       >
-        <span className="grid size-16 place-items-center rounded-full bg-success/12 text-success">
+        <span className="grid size-16 place-items-center rounded-full bg-success/15 text-success">
           <CheckCircle2 className="size-9" aria-hidden="true" />
         </span>
-        <h2 className="font-display text-2xl font-extrabold">Thank you, {values.fullName}!</h2>
-        <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-          Your lesson request for <strong className="text-foreground">{values.vehicleType}</strong>{" "}
-          training on <strong className="text-foreground">{values.date}</strong> at{" "}
-          <strong className="text-foreground">{values.time}</strong> has been received. Our team
-          will call you on <strong className="text-foreground">{values.mobile}</strong> to confirm
-          your batch and timing.
-        </p>
-        <div className="flex flex-wrap justify-center gap-3">
-          <Button asChild variant="outline">
-            <a href="#lesson-payment">Pay agreed fees / advance</a>
-          </Button>
-          <Button asChild variant="cta">
+
+        <div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+            ✓ Booking Received & Confirmed
+          </span>
+          <h2 className="font-display text-2xl sm:text-3xl font-extrabold mt-2 text-foreground">
+            Thank you, {values.fullName}!
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Booking Reference ID: <strong className="font-mono text-primary font-bold">{bookingRef}</strong>
+          </p>
+        </div>
+
+        {/* Customer Reply Message Box */}
+        <div className="w-full text-left rounded-2xl border-2 border-primary/20 bg-primary/5 p-4 sm:p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2 border-b border-primary/10 pb-2">
+            <span className="flex items-center gap-2 text-xs sm:text-sm font-bold text-primary">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              Confirmation Reply Message
+            </span>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="text-xs font-semibold text-primary hover:underline"
+            >
+              {copied ? "✓ Copied!" : "Copy message"}
+            </button>
+          </div>
+
+          <div className="space-y-1.5 text-xs sm:text-sm text-foreground/90 font-mono bg-background/80 rounded-xl p-3 border border-border">
+            <p className="font-bold text-primary">Dear {values.fullName},</p>
+            <p>Your request for <strong className="text-foreground">{values.vehicleType}</strong> training on <strong className="text-foreground">{values.date}</strong> at <strong className="text-foreground">{values.time}</strong> is confirmed.</p>
+            <p className="text-muted-foreground text-[11px] sm:text-xs">
+              Our training instructor will call you on <strong>{values.mobile}</strong> to confirm your first class & pickup point.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button asChild variant="cta" size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+              <a
+                href={`https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(confirmationText)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Send Confirmation to WhatsApp
+              </a>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopy}
+              className="border-primary/40 text-primary"
+            >
+              {copied ? "✓ Copied to Clipboard" : "Copy Reply Slip"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-center gap-3 w-full">
+          <Button asChild variant="cta" className="flex-1 min-w-[200px]">
             <a href={telHref}>
-              <Phone aria-hidden="true" /> Call {site.phoneDisplay}
+              <Phone aria-hidden="true" className="size-4" /> Call {site.phoneDisplay}
             </a>
           </Button>
           <Button
             variant="outline"
+            className="flex-1 min-w-[200px]"
             onClick={() => {
               setValues({ ...emptyValues, vehicleType: defaultVehicle ?? "" });
               setStatus("idle");
@@ -136,7 +200,8 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
             Book another lesson
           </Button>
         </div>
-        <div className="w-full text-left">
+
+        <div className="w-full text-left mt-4 border-t pt-6">
           <LessonPayment
             id="booking-success-payment"
             learnerName={values.fullName}
@@ -179,7 +244,7 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           />
         </Field>
 
-        <Field label="E-mail ID" htmlFor="email" error={errors.email} required>
+        <Field label="E-mail ID (Optional)" htmlFor="email" error={errors.email}>
           <input
             id="email"
             name="email"
