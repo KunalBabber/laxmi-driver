@@ -51,6 +51,16 @@ function validate(v: BookingValues): Errors {
 }
 
 async function submitBooking(values: BookingValues): Promise<void> {
+  // Map paymentChoice to valid database constraint values ('Pay after confirmation', 'UPI', 'Card', 'Cash')
+  let dbPaymentChoice = "Pay after confirmation";
+  if (values.paymentChoice === "Razorpay" || values.paymentChoice === "UPI") {
+    dbPaymentChoice = "UPI";
+  } else if (values.paymentChoice === "Card") {
+    dbPaymentChoice = "Card";
+  } else if (values.paymentChoice === "Cash") {
+    dbPaymentChoice = "Cash";
+  }
+
   const { error } = await supabase.from("lesson_bookings").insert({
     full_name: values.fullName.trim(),
     mobile: values.mobile.trim(),
@@ -60,9 +70,12 @@ async function submitBooking(values: BookingValues): Promise<void> {
     preferred_date: values.date,
     preferred_time: values.time,
     message: values.message.trim() || null,
-    payment_choice: values.paymentChoice,
+    payment_choice: dbPaymentChoice,
   });
-  if (error) throw error;
+  if (error) {
+    console.error("[submitBooking Error]", error);
+    throw error;
+  }
 }
 
 const fieldClass =
@@ -118,14 +131,23 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
             },
           });
           console.log("[Booking Confirmation Email Result]", res);
+          if (!res?.success) {
+            console.warn("Booking confirmation email notice:", res?.error);
+          }
         } catch (err: unknown) {
           console.error("Booking confirmation email dispatch error:", err);
         }
       }
 
       setStatus("done");
-    } catch {
-      setSubmitError("Your request could not be saved. Please try again or call us.");
+    } catch (err: unknown) {
+      console.error("[Booking Submission Error]", err);
+      const msg = err instanceof Error ? err.message : "";
+      setSubmitError(
+        msg
+          ? `Your request could not be saved: ${msg}`
+          : "Your request could not be saved. Please try again or call us.",
+      );
       setStatus("idle");
     }
   }

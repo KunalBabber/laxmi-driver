@@ -18,6 +18,12 @@ function getTransporter() {
         user,
         pass,
       },
+      tls: {
+        rejectUnauthorized: false,
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
     }),
   };
 }
@@ -494,12 +500,13 @@ Near Old Bus Stand / Ground, Rohtak, Haryana
 </html>
 `;
 
+    const bcc = data.customerEmail.toLowerCase() === user.toLowerCase() ? undefined : user;
     try {
       const info = await transporter.sendMail({
         from: `"Laxmi Motor Driving School" <${user}>`,
         replyTo: user,
         to: data.customerEmail,
-        bcc: user,
+        ...(bcc ? { bcc } : {}),
         subject: `Booking Confirmed: Your ${data.vehicleType} Driving Training [Ref: #${data.bookingRef}]`,
         text: plainText,
         html: htmlContent,
