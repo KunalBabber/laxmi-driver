@@ -185,6 +185,15 @@ function PartnerApply() {
   useEffect(() => {
     if (!user) return;
     let active = true;
+
+    // Prefill email if empty and user has a real email address
+    if (user.email && !user.email.endsWith("@partner.laxmidriving.com")) {
+      setF((prev) => ({
+        ...prev,
+        email: prev.email || user.email || "",
+      }));
+    }
+
     const restore = async () => {
       try {
         const saved = localStorage.getItem(`partner-draft:${user.id}`);
@@ -195,10 +204,14 @@ function PartnerApply() {
           .select("*")
           .eq("id", saved)
           .eq("user_id", user.id)
-          .single();
-        if (error)
-          throw new Error("Could not restore your draft. Refresh to retry before submitting.");
+          .maybeSingle();
         if (!active) return;
+        if (error || !data) {
+          // If draft doesn't exist in DB, clear stale localStorage entry so user starts clean
+          localStorage.removeItem(`partner-draft:${user.id}`);
+          applicationId.current = null;
+          return;
+        }
         if (
           !["Draft", "Correction Required", "Payment Pending", "Submitted"].includes(data.status)
         ) {
@@ -218,7 +231,9 @@ function PartnerApply() {
           .select("doc_type")
           .eq("application_id", saved)
           .eq("is_current", true);
-        if (docError) throw new Error("Your documents could not be checked. Refresh to retry.");
+        if (docError) {
+          console.warn("Could not check existing documents:", docError);
+        }
         setUploadStates(
           Object.fromEntries(
             (docs ?? []).map((d) => [d.doc_type, { state: "saved", percent: 100 }]),
@@ -286,11 +301,15 @@ function PartnerApply() {
       localStorage.setItem(`partner-draft:${user.id}`, applicationId.current);
     }
     const { terms: _terms, payment_reference: _reference, ...values } = f;
+    const finalEmail =
+      values.email.trim() ||
+      (user.email && !user.email.endsWith("@partner.laxmidriving.com") ? user.email : "");
     return savePartnerDraft({
       data: {
         id: applicationId.current,
         values: {
           ...values,
+          email: finalEmail,
           vehicle_type: values.vehicle_type as "Car",
           manufacturing_year: Number(values.manufacturing_year),
           ownership_status: values.ownership_status as "Individual Owner",

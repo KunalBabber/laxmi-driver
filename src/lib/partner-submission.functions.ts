@@ -24,21 +24,21 @@ const details = z.object({
   registration_number: text,
   vehicle_make: text,
   vehicle_model: text,
-  manufacturing_year: z.coerce.number().int().min(1990).max(new Date().getFullYear()),
-  fuel_type: z.enum(["Petrol", "Diesel", "CNG", "Electric", "Hybrid"]),
-  transmission: z.enum(["Manual", "Automatic", "Gearless (Scooter)"]),
-  vehicle_color: z.string().max(100),
-  odometer_km: z.string().regex(/^\d*$/),
-  ownership_status: z.enum(["Individual Owner", "Business Owner", "Company/Fleet Owner"]),
-  preferred_location: z.string().max(100),
-  preferred_use: z.string().max(100),
-  preferred_availability: z.string().max(100),
-  bank_account_name: z.string().max(200),
-  bank_name: z.string().max(200),
-  bank_account_number: z.string().max(40),
-  bank_ifsc: z.string().max(11),
-  upi_id: z.string().max(200),
-});
+    manufacturing_year: z.coerce.number().int().min(1990).max(new Date().getFullYear() + 1),
+    fuel_type: z.enum(["Petrol", "Diesel", "CNG", "Electric", "Hybrid"]),
+    transmission: z.enum(["Manual", "Automatic", "Gearless (Scooter)"]),
+    vehicle_color: z.string().max(100),
+    odometer_km: z.string().regex(/^\d*$/),
+    ownership_status: z.enum(["Individual Owner", "Business Owner", "Company/Fleet Owner"]),
+    preferred_location: z.string().max(100),
+    preferred_use: z.string().max(100),
+    preferred_availability: z.string().max(100),
+    bank_account_name: z.string().max(200),
+    bank_name: z.string().max(200),
+    bank_account_number: z.string().max(40),
+    bank_ifsc: z.string().max(11),
+    upi_id: z.string().max(200),
+  });
 const editable: Database["public"]["Enums"]["partner_application_status"][] = [
   "Draft",
   "Correction Required",
@@ -65,7 +65,10 @@ export const savePartnerDraft = createServerFn({ method: "POST" })
       .select("id,status,user_id")
       .eq("id", data.id)
       .maybeSingle();
-    if (readError) throw new Error("Could not check your saved application. Please retry.");
+    if (readError) {
+      console.error("[savePartnerDraft] read error:", readError);
+      throw new Error(`Could not check saved application: ${readError.message}`);
+    }
     if (existing && (existing.user_id !== context.userId || !editable.includes(existing.status)))
       throw new Error("This application is no longer editable.");
     const payload = {
@@ -87,8 +90,14 @@ export const savePartnerDraft = createServerFn({ method: "POST" })
           terms_accepted: false,
         });
     const { data: app, error } = await query.select("id,application_no").single();
-    if (error || !app)
-      throw new Error("Application could not be saved. Retry with the same application.");
+    if (error || !app) {
+      console.error("[savePartnerDraft] query error:", error);
+      throw new Error(
+        error?.message
+          ? `Application could not be saved: ${error.message}`
+          : "Application could not be saved. Retry with the same application.",
+      );
+    }
     return app;
   });
 
@@ -120,7 +129,10 @@ export const preparePartnerUpload = createServerFn({ method: "POST" })
     const { data: signed, error } = await context.supabase.storage
       .from("partner-documents")
       .createSignedUploadUrl(path);
-    if (error || !signed) throw new Error("Could not prepare upload. Please retry.");
+    if (error || !signed) {
+      console.error("[preparePartnerUpload] error:", error);
+      throw new Error(error?.message ? `Could not prepare upload: ${error.message}` : "Could not prepare upload. Please retry.");
+    }
     return { path, token: signed.token };
   });
 
@@ -163,21 +175,59 @@ export const confirmPartnerUpload = createServerFn({ method: "POST" })
       await context.supabase.storage.from("partner-documents").remove([data.path]);
       throw new Error("This file is not a valid JPG, PNG or PDF.");
     }
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: id, error: saveError } = await supabaseAdmin.rpc("replace_partner_document", {
-      _application_id: data.id,
-      _user_id: context.userId,
-      _doc_type: data.docType,
-      _file_path: data.path,
-      _file_name: data.name,
-      _mime_type: data.mime,
-      _file_size: data.size,
-    });
-    if (saveError)
+
+    const { hasSupabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (hasSupabaseAdmin()) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: id, error: saveError } = await supabaseAdmin.rpc("replace_partner_document", {
+        _application_id: data.id,
+        _user_id: context.userId,
+        _doc_type: data.docType,
+        _file_path: data.path,
+        _file_name: data.name,
+        _mime_type: data.mime,
+        _file_size: data.size,
+      });
+      if (saveError) {
+        console.error("[confirmPartnerUpload] RPC error:", saveError);
+        throw new Error(`File uploaded but could not be saved: ${saveError.message}`);
+      }
+      return { id };
+    }
+
+    // Fallback if SUPABASE_SERVICE_ROLE_KEY is not defined:
+    // Delete existing document for this doc_type, then insert new current row
+    await context.supabase
+      .from("partner_documents")
+      .delete()
+      .eq("application_id", data.id)
+      .eq("user_id", context.userId)
+      .eq("doc_type", data.docType);
+
+    const { data: inserted, error: saveError } = await context.supabase
+      .from("partner_documents")
+      .insert({
+        application_id: data.id,
+        user_id: context.userId,
+        doc_type: data.docType,
+        file_path: data.path,
+        file_name: data.name,
+        mime_type: data.mime,
+        file_size: data.size,
+        is_current: true,
+      })
+      .select("id")
+      .single();
+
+    if (saveError || !inserted) {
+      console.error("[confirmPartnerUpload] fallback insert error:", saveError);
       throw new Error(
-        "File uploaded but not recorded. Retry to confirm it; do not submit a new application.",
+        saveError?.message
+          ? `File uploaded but not recorded: ${saveError.message}`
+          : "File uploaded but not recorded. Retry to confirm it.",
       );
-    return { id };
+    }
+    return { id: inserted.id };
   });
 
 export const finalizePartnerApplication = createServerFn({ method: "POST" })
@@ -222,26 +272,50 @@ export const finalizePartnerApplication = createServerFn({ method: "POST" })
       )
     )
       throw new Error("Upload and save all six required documents before submitting.");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error: updateError } = await supabaseAdmin
-      .from("partner_applications")
-      .update({
-        terms_accepted: true,
-        status: "Payment Pending",
-        submitted_at: app.submitted_at ?? new Date().toISOString(),
-        ...(app.payment_status === "Pending" && data.reference
-          ? {
-              payment_reference: data.reference,
-              payment_status: "Under Verification",
-              payment_method: "UPI / Bank Transfer",
-            }
-          : {}),
-      })
-      .eq("id", data.id)
-      .eq("user_id", context.userId)
-      .in("status", editable);
-    if (updateError)
-      throw new Error("Submission could not be confirmed. Check your dashboard before retrying.");
+
+    const updatePayload = {
+      terms_accepted: true,
+      status: "Payment Pending" as const,
+      submitted_at: app.submitted_at ?? new Date().toISOString(),
+      ...(app.payment_status === "Pending" && data.reference
+        ? {
+            payment_reference: data.reference,
+            payment_status: "Under Verification" as const,
+            payment_method: "UPI / Bank Transfer",
+          }
+        : {}),
+    };
+
+    const { hasSupabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (hasSupabaseAdmin()) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { error: updateError } = await supabaseAdmin
+        .from("partner_applications")
+        .update(updatePayload)
+        .eq("id", data.id)
+        .eq("user_id", context.userId)
+        .in("status", editable);
+      if (updateError) {
+        console.error("[finalizePartnerApplication] admin update error:", updateError);
+        throw new Error(`Submission could not be confirmed: ${updateError.message}`);
+      }
+    } else {
+      const { error: updateError } = await context.supabase
+        .from("partner_applications")
+        .update(updatePayload)
+        .eq("id", data.id)
+        .eq("user_id", context.userId)
+        .in("status", editable);
+      if (updateError) {
+        console.error("[finalizePartnerApplication] user update error:", updateError);
+        throw new Error(
+          updateError.message.includes("staff")
+            ? "Submission requires database service role configuration (SUPABASE_SERVICE_ROLE_KEY missing in environment)."
+            : `Submission could not be confirmed: ${updateError.message}`,
+        );
+      }
+    }
+
     return {
       no: app.application_no ?? app.id,
       ref: Boolean(data.reference || app.payment_reference),

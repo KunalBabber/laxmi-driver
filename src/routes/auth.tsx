@@ -202,7 +202,7 @@ function AuthPage() {
           setResendAfter(Date.now() + 60_000);
         } else {
           // Partner account created with phone number
-          const { data: signInData } = await supabase.auth.signInWithPassword({
+          const { data: signInData, error: autoSignInError } = await supabase.auth.signInWithPassword({
             email: targetEmail,
             password: authPassword,
           });
@@ -210,6 +210,11 @@ function AuthPage() {
             toast.success("Partner account created and logged in successfully!");
             await navigate({ to: target, replace: true });
             return;
+          }
+          if (autoSignInError?.message?.toLowerCase().includes("email not confirmed")) {
+            throw new Error(
+              "Account created! To sign in directly with your mobile number without email verification, disable 'Confirm email' in Supabase Dashboard (Authentication -> Providers -> Email), or provide your real email above to receive a verification link.",
+            );
           }
           toast.success("Partner account created! You can now sign in with your mobile number.");
           setMode("signin");
@@ -268,7 +273,17 @@ function AuthPage() {
           }
         }
 
-        if (signInRes.error) throw signInRes.error;
+        if (signInRes.error) {
+          const msg = signInRes.error.message.toLowerCase();
+          if (msg.includes("email not confirmed")) {
+            throw new Error(
+              targetEmail.endsWith("@partner.laxmidriving.com")
+                ? "Your mobile partner account needs email confirmation. In Supabase Dashboard, disable 'Confirm email' under Authentication -> Providers -> Email, or sign in using your verified email address."
+                : "Please check your inbox and click the confirmation link before signing in.",
+            );
+          }
+          throw signInRes.error;
+        }
       }
     } catch (error) {
       setFormError(
