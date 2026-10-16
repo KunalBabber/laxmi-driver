@@ -37,6 +37,9 @@ export type NewBookingPayload = {
   time: string;
   message?: string;
   paymentChoice?: string;
+  paymentStatus?: "Unpaid" | "Paid" | "Pending verification" | string;
+  paymentId?: string;
+  amountPaid?: number;
 };
 
 export async function sendBookingConfirmationEmailDirect(data: NewBookingPayload) {
@@ -54,14 +57,25 @@ export async function sendBookingConfirmationEmailDirect(data: NewBookingPayload
   const mobile = data.mobile || "";
   const paymentChoice = data.paymentChoice || "Pay after confirmation";
   const message = data.message || "";
+  const isPaid = data.paymentStatus === "Paid" || Boolean(data.paymentId);
+  const amountPaid = data.amountPaid || 500;
+  const paymentId = data.paymentId || "";
+
+  const subject = isPaid
+    ? `✓ Payment Confirmed (₹${amountPaid.toLocaleString("en-IN")}) & Booking Confirmed [Ref: #${bookingRef}]`
+    : `Booking Confirmed: Your ${vehicleType} Driving Training [Ref: #${bookingRef}]`;
 
   const plainText = `
-LAXMI MOTOR DRIVING TRAINING SCHOOL - BOOKING CONFIRMATION
+LAXMI MOTOR DRIVING TRAINING SCHOOL - ${isPaid ? "PAYMENT & BOOKING CONFIRMATION" : "BOOKING CONFIRMATION"}
 Government Approved Driving School · Rohtak, Haryana
 
 Namaste ${customerName},
 
-Thank you for choosing Laxmi Motor Driving Training School! Your driving training enquiry has been received and confirmed.
+${
+  isPaid
+    ? `Thank you! We have successfully received your payment of ₹${amountPaid.toLocaleString("en-IN")} via Razorpay. Your driving training booking is confirmed and prioritized.`
+    : `Thank you for choosing Laxmi Motor Driving Training School! Your driving training enquiry has been received and confirmed.`
+}
 
 YOUR BOOKING DETAILS:
 ------------------------------------------------
@@ -71,6 +85,7 @@ YOUR BOOKING DETAILS:
 • Preferred Date & Time: ${date} at ${time}
 • Contact Mobile: ${mobile}
 • Payment Preference: ${paymentChoice}
+${isPaid ? `• Payment Status: PAID (Verified via Razorpay)\n• Payment ID: ${paymentId}\n• Amount Paid: ₹${amountPaid.toLocaleString("en-IN")}\n` : ""}
 ${message ? `• Special Notes: ${message}\n` : ""}
 WHAT HAPPENS NEXT?
 1. Instructor Call: Our senior trainer will call you shortly on ${mobile} to confirm your batch timing and pickup point.
@@ -93,7 +108,7 @@ Near Old Bus Stand / Ground, Rohtak, Haryana
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Booking Confirmation - Laxmi Driving School</title>
+  <title>${isPaid ? "Payment & Booking Confirmation" : "Booking Confirmation"} - Laxmi Driving School</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 30px 10px;">
@@ -120,18 +135,23 @@ Near Old Bus Stand / Ground, Rohtak, Haryana
                 Namaste <strong>${customerName}</strong>,
               </p>
               <p style="font-size: 15px; line-height: 1.6; margin: 0 0 24px; color: #475569;">
-                Thank you for choosing <strong>Laxmi Motor Driving Training School</strong>! Your driving training enquiry has been received and confirmed.
+                ${
+                  isPaid
+                    ? `Thank you! We have successfully received your payment of <strong>₹${amountPaid.toLocaleString("en-IN")}</strong> via Razorpay. Your driving lesson batch is confirmed and prioritized.`
+                    : `Thank you for choosing <strong>Laxmi Motor Driving Training School</strong>! Your driving training enquiry has been received and confirmed.`
+                }
               </p>
 
               <!-- Success Card -->
               <div style="background-color: #dcfce7; border: 1.5px solid #86efac; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; text-align: center;">
                 <span style="display: inline-block; font-size: 12px; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; color: #15803d; margin-bottom: 6px;">
-                  Status
+                  ${isPaid ? "Payment Verified & Booking Confirmed" : "Booking Status"}
                 </span>
                 <div style="font-size: 22px; font-weight: 800; color: #15803d;">
-                  ✓ Booking Confirmed & Received
+                  ${isPaid ? `✓ ₹${amountPaid.toLocaleString("en-IN")} Paid via Razorpay` : "✓ Booking Received & Confirmed"}
                 </div>
                 <p style="margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: #15803d;">
+                  ${isPaid && paymentId ? `Payment ID: <strong style="font-family: monospace;">${paymentId}</strong><br>` : ""}
                   Reference ID: <strong style="font-family: monospace; font-size: 15px;">#${bookingRef}</strong>
                 </p>
               </div>
@@ -140,7 +160,7 @@ Near Old Bus Stand / Ground, Rohtak, Haryana
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                 <tr style="background-color: #f8fafc;">
                   <td colspan="2" style="padding: 12px 16px; font-weight: 700; font-size: 14px; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
-                    Your Booking Details
+                    Your Booking Summary
                   </td>
                 </tr>
                 <tr>
@@ -185,12 +205,24 @@ Near Old Bus Stand / Ground, Rohtak, Haryana
                 </tr>
                 <tr>
                   <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
-                    Payment Preference
+                    Payment Status
                   </td>
-                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
-                    ${paymentChoice}
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 700; color: ${isPaid ? "#15803d" : "#0f172a"}; border-bottom: 1px solid #e2e8f0;">
+                    ${isPaid ? `✓ PAID (₹${amountPaid.toLocaleString("en-IN")} via Razorpay)` : paymentChoice}
                   </td>
                 </tr>
+                ${
+                  isPaid && paymentId
+                    ? `<tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Payment Transaction ID
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-family: monospace; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${paymentId}
+                  </td>
+                </tr>`
+                    : ""
+                }
                 ${
                   message
                     ? `<tr>
@@ -268,12 +300,12 @@ Near Old Bus Stand / Ground, Rohtak, Haryana
       replyTo: user,
       to: data.customerEmail,
       ...(bcc ? { bcc } : {}),
-      subject: `Booking Confirmed: Your ${vehicleType} Driving Training [Ref: #${bookingRef}]`,
+      subject,
       text: plainText,
       html: htmlContent,
     });
 
-    console.log(`[New Booking Email Sent] MessageId: ${info.messageId} to ${data.customerEmail}`);
+    console.log(`[New Booking Email Sent] MessageId: ${info.messageId} to ${data.customerEmail} (isPaid: ${isPaid})`);
     return { success: true, messageId: info.messageId };
   } catch (err: unknown) {
     console.error("[New Booking Email Error]", err);
@@ -300,7 +332,10 @@ export async function sendBookingStatusEmailDirect(data: StatusUpdatePayload) {
 
   const { user, transporter } = getTransporter();
   const customerName = data.customerName || "Learner";
-  const shortId = data.bookingId && data.bookingId.length > 8 ? data.bookingId.slice(0, 8).toUpperCase() : (data.bookingId || "REF");
+  const shortId =
+    data.bookingId && data.bookingId.length > 8
+      ? data.bookingId.slice(0, 8).toUpperCase()
+      : data.bookingId || "REF";
   const newStatus = data.newStatus || "Confirmed";
   const vehicleType = data.vehicleType || "Training";
   const preferredDate = data.preferredDate || "";
