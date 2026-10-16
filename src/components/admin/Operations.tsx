@@ -22,6 +22,7 @@ import {
   type Instructor,
   type Partner,
 } from "@/lib/operations";
+import { sendBookingStatusEmail } from "@/lib/email.server";
 
 type View =
   | "overview"
@@ -197,7 +198,36 @@ function BookingRow({
           label="Booking status"
           value={b.status}
           choices={bookingStates}
-          onChange={(status) => update({ status })}
+          onChange={async (newStatus) => {
+            if (newStatus === b.status) return;
+            update({ status: newStatus });
+            if (b.email && b.email.trim() !== "" && b.email.includes("@")) {
+              try {
+                const res = await sendBookingStatusEmail({
+                  data: {
+                    bookingId: b.id,
+                    customerEmail: b.email.trim(),
+                    customerName: b.full_name || "Learner",
+                    newStatus,
+                    vehicleType: b.vehicle_type,
+                    preferredDate: b.preferred_date,
+                    preferredTime: b.preferred_time,
+                    mobile: b.mobile,
+                  },
+                });
+                if (res.success) {
+                  toast.success(`Booking status changed to "${newStatus}" and email notification sent to ${b.email}!`);
+                } else {
+                  toast.warning(`Status updated to "${newStatus}", but email notification failed: ${res.error}`);
+                }
+              } catch (err: unknown) {
+                console.error("Status update email error:", err);
+                toast.warning(`Status changed to "${newStatus}", but email could not be sent.`);
+              }
+            } else {
+              toast.info(`Booking status changed to "${newStatus}". (Customer has no email address recorded)`);
+            }
+          }}
           disabled={save.isPending}
         />
         <SelectField

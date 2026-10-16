@@ -16,7 +16,7 @@ import { SectionHeading } from "@/components/site/Section";
 import { CourseCard } from "@/components/site/CourseCard";
 import { CtaBand } from "@/components/site/CtaBand";
 import { VehicleTrainingSlider } from "@/components/site/VehicleTrainingSlider";
-import heroCar from "@/assets/hero-car.jpg";
+import { HeroImageSlider } from "@/components/site/HeroImageSlider";
 import scooterImg from "@/assets/scooter-training.jpg";
 import { site, telHref, trustStats, whatsappHref } from "@/lib/site";
 
@@ -100,24 +100,7 @@ function Home() {
           </div>
 
           <div className="animate-fade-up relative">
-            <img
-              src={heroCar}
-              alt="Young Indian learner driver at the wheel of a white training car with a red L plate, instructor guiding from the passenger seat"
-              width={1600}
-              height={1104}
-              className="w-full rounded-3xl shadow-[var(--shadow-lift)]"
-            />
-            <div className="card-surface absolute -bottom-6 left-4 flex items-center gap-3 p-4 sm:left-8">
-              <span className="grid size-11 place-items-center rounded-xl bg-primary-soft text-primary">
-                <ShieldCheck className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="font-display text-sm font-bold text-foreground">
-                  Dual-Control Training Car
-                </p>
-                <p className="text-xs text-muted-foreground">Safe practice from your first class</p>
-              </div>
-            </div>
+            <HeroImageSlider />
           </div>
         </div>
       </section>
