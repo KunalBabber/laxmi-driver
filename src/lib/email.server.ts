@@ -235,3 +235,230 @@ export const sendBookingStatusEmail = createServerFn({ method: "POST" })
       return { success: false, error: message };
     }
   });
+
+const newBookingConfirmationSchema = z.object({
+  bookingRef: z.string(),
+  customerName: z.string(),
+  customerEmail: z.string().email(),
+  mobile: z.string(),
+  vehicleType: z.string(),
+  experience: z.string(),
+  date: z.string(),
+  time: z.string(),
+  message: z.string().optional(),
+  paymentChoice: z.string().optional(),
+});
+
+export const sendNewBookingConfirmationEmail = createServerFn({ method: "POST" })
+  .validator((data: unknown) => newBookingConfirmationSchema.parse(data))
+  .handler(async ({ data }) => {
+    const host = process.env["NODEMAILER_HOST"] || "smtp.gmail.com";
+    const port = Number(process.env["NODEMAILER_PORT"] || 587);
+    const user = process.env["NODEMAILER_EMAIL"] || "frameflicks00@gmail.com";
+    const pass = process.env["NODEMAILER_PASSWORD"] || "rxed baqr gfib fjac";
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: {
+        user,
+        pass,
+      },
+    });
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking Confirmation - Laxmi Driving School</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 30px 10px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08);" cellspacing="0" cellpadding="0">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #1E40E7 0%, #172554 100%); padding: 36px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
+                Laxmi Motor Driving Training School
+              </h1>
+              <p style="margin: 8px 0 0; color: #cbd5e1; font-size: 14px;">
+                Government Approved Driving Training · Rohtak, Haryana
+              </p>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 32px 30px;">
+              <p style="font-size: 16px; margin: 0 0 16px; color: #334155;">
+                Namaste <strong>${data.customerName}</strong>,
+              </p>
+              <p style="font-size: 15px; line-height: 1.6; margin: 0 0 24px; color: #475569;">
+                Thank you for choosing <strong>Laxmi Motor Driving Training School</strong>! Your driving training enquiry has been received and confirmed.
+              </p>
+
+              <!-- Success Card -->
+              <div style="background-color: #dcfce7; border: 1.5px solid #86efac; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; text-align: center;">
+                <span style="display: inline-block; font-size: 12px; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; color: #15803d; margin-bottom: 6px;">
+                  Status
+                </span>
+                <div style="font-size: 22px; font-weight: 800; color: #15803d;">
+                  ✓ Booking Confirmed & Received
+                </div>
+                <p style="margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: #15803d;">
+                  Reference ID: <strong style="font-family: monospace; font-size: 15px;">#${data.bookingRef}</strong>
+                </p>
+              </div>
+
+              <!-- Full Booking Details -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <tr style="background-color: #f8fafc;">
+                  <td colspan="2" style="padding: 12px 16px; font-weight: 700; font-size: 14px; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    Your Booking Details
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0; width: 40%;">
+                    Booking Reference
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    #${data.bookingRef}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Vehicle Training
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${data.vehicleType} Training
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Experience Level
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${data.experience}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Preferred Date & Time
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${data.date} at ${data.time}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Contact Mobile
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${data.mobile}
+                  </td>
+                </tr>
+                ${
+                  data.paymentChoice
+                    ? `<tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Payment Preference
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${data.paymentChoice}
+                  </td>
+                </tr>`
+                    : ""
+                }
+                ${
+                  data.message
+                    ? `<tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Special Notes
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${data.message}
+                  </td>
+                </tr>`
+                    : ""
+                }
+              </table>
+
+              <!-- Next Steps Card -->
+              <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 24px;">
+                <p style="margin: 0 0 10px; font-weight: 700; font-size: 14px; color: #0f172a;">
+                  What Happens Next?
+                </p>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #475569; line-height: 1.7;">
+                  <li><strong>Instructor Call:</strong> Our senior trainer will call you shortly on <strong>${data.mobile}</strong> to confirm your batch and pick-up point.</li>
+                  <li><strong>Practice Vehicles:</strong> Certified dual-control cars, bike track cones & safety gear.</li>
+                  <li><strong>Licence Assistance:</strong> Complete guidance on learner licence and RTO driving test.</li>
+                </ul>
+              </div>
+
+              <!-- Contact Box -->
+              <div style="background-color: #eff6ff; border-radius: 12px; padding: 20px; border: 1px solid #bfdbfe; margin-bottom: 24px;">
+                <p style="margin: 0 0 8px; font-weight: 700; font-size: 14px; color: #1e3a8a;">
+                  Need Immediate Help or Directions?
+                </p>
+                <p style="margin: 0 0 14px; font-size: 13px; color: #3b82f6; line-height: 1.5;">
+                  Call our training helpline or chat directly on WhatsApp.
+                </p>
+                <div>
+                  <a href="tel:+919416055858" style="display: inline-block; background-color: #1E40E7; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 9px 18px; border-radius: 6px; margin-right: 8px;">
+                    Call: +91 94160 55858
+                  </a>
+                  <a href="https://wa.me/919416055858" style="display: inline-block; background-color: #16a34a; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 9px 18px; border-radius: 6px;">
+                    WhatsApp Us
+                  </a>
+                </div>
+              </div>
+
+              <p style="margin: 0; font-size: 13px; color: #94a3b8; line-height: 1.5;">
+                We look forward to teaching you safe and confident driving. See you at the training session!
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 30px; text-align: center;">
+              <p style="margin: 0 0 4px; font-size: 12px; color: #64748b; font-weight: 600;">
+                Laxmi Motor Driving Training School
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                Near Old Bus Stand / Ground, Rohtak, Haryana · <a href="https://laxmidriving.com" style="color: #1E40E7; text-decoration: none;">laxmidriving.com</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+
+    try {
+      const info = await transporter.sendMail({
+        from: `"Laxmi Motor Driving School" <${user}>`,
+        to: data.customerEmail,
+        bcc: user,
+        subject: `🚗 Booking Confirmed: Your ${data.vehicleType} Driving Training [Ref: #${data.bookingRef}]`,
+        html: htmlContent,
+      });
+
+      console.log(`[New Booking Email Sent] MessageId: ${info.messageId} to ${data.customerEmail}`);
+      return { success: true, messageId: info.messageId };
+    } catch (err: unknown) {
+      console.error("[New Booking Email Error]", err);
+      const message = err instanceof Error ? err.message : "Failed to send booking confirmation email.";
+      return { success: false, error: message };
+    }
+  });

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { site, telHref } from "@/lib/site";
 import { supabase } from "@/integrations/supabase/client";
 import { LessonPayment } from "./LessonPayment";
+import { sendNewBookingConfirmationEmail } from "@/lib/email.server";
 
 export type BookingValues = {
   fullName: string;
@@ -97,6 +98,25 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
       const generatedRef = "LDT-BK-" + Math.floor(100000 + Math.random() * 900000);
       setBookingRef(generatedRef);
       setStatus("done");
+
+      if (values.email && values.email.trim() && values.email.includes("@")) {
+        sendNewBookingConfirmationEmail({
+          data: {
+            bookingRef: generatedRef,
+            customerName: values.fullName.trim(),
+            customerEmail: values.email.trim(),
+            mobile: values.mobile.trim(),
+            vehicleType: values.vehicleType,
+            experience: values.experience,
+            date: values.date,
+            time: values.time,
+            message: values.message.trim() || undefined,
+            paymentChoice: values.paymentChoice,
+          },
+        }).catch((err: unknown) => {
+          console.error("Booking confirmation email dispatch error:", err);
+        });
+      }
     } catch {
       setSubmitError("Your request could not be saved. Please try again or call us.");
       setStatus("idle");
@@ -132,6 +152,11 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           <p className="mt-1 text-xs text-muted-foreground">
             Booking Reference ID: <strong className="font-mono text-primary font-bold">{bookingRef}</strong>
           </p>
+          {values.email && values.email.trim() && (
+            <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+              ✉️ A confirmation email with complete booking details has been sent to <strong>{values.email}</strong>.
+            </p>
+          )}
         </div>
 
         {/* Customer Reply Message Box */}
@@ -244,13 +269,13 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           />
         </Field>
 
-        <Field label="E-mail ID (Optional)" htmlFor="email" error={errors.email}>
+        <Field label="E-mail ID (for booking confirmation email)" htmlFor="email" error={errors.email}>
           <input
             id="email"
             name="email"
             type="email"
             className={fieldClass}
-            placeholder="name@example.com"
+            placeholder="name@gmail.com (receive instant confirmation email)"
             autoComplete="email"
             value={values.email}
             data-invalid={Boolean(errors.email)}
