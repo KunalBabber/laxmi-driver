@@ -2,16 +2,25 @@ import { createServerFn } from "@tanstack/react-start";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 
-const sendBookingStatusSchema = z.object({
-  bookingId: z.string(),
-  customerEmail: z.string().email(),
-  customerName: z.string(),
-  newStatus: z.string(),
-  vehicleType: z.string().optional(),
-  preferredDate: z.string().optional(),
-  preferredTime: z.string().optional(),
-  mobile: z.string().optional(),
-});
+function getTransporter() {
+  const host = process.env["NODEMAILER_HOST"] || "smtp.gmail.com";
+  const port = Number(process.env["NODEMAILER_PORT"] || 587);
+  const user = process.env["NODEMAILER_EMAIL"] || "frameflicks00@gmail.com";
+  const pass = process.env["NODEMAILER_PASSWORD"] || "rxed baqr gfib fjac";
+
+  return {
+    user,
+    transporter: nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: {
+        user,
+        pass,
+      },
+    }),
+  };
+}
 
 function getStatusBadgeConfig(status: string) {
   const s = status.toLowerCase();
@@ -64,26 +73,48 @@ function getStatusBadgeConfig(status: string) {
   };
 }
 
+// 1. Admin updates booking status
+const sendBookingStatusSchema = z.object({
+  bookingId: z.string().default("REF"),
+  customerEmail: z.string().trim(),
+  customerName: z.string().default("Learner"),
+  newStatus: z.string().default("Confirmed"),
+  vehicleType: z.string().nullish().default(""),
+  preferredDate: z.string().nullish().default(""),
+  preferredTime: z.string().nullish().default(""),
+  mobile: z.string().nullish().default(""),
+});
+
 export const sendBookingStatusEmail = createServerFn({ method: "POST" })
   .validator((data: unknown) => sendBookingStatusSchema.parse(data))
   .handler(async ({ data }) => {
-    const host = process.env["NODEMAILER_HOST"] || "smtp.gmail.com";
-    const port = Number(process.env["NODEMAILER_PORT"] || 587);
-    const user = process.env["NODEMAILER_EMAIL"] || "frameflicks00@gmail.com";
-    const pass = process.env["NODEMAILER_PASSWORD"] || "rxed baqr gfib fjac";
-
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: {
-        user,
-        pass,
-      },
-    });
-
+    const { user, transporter } = getTransporter();
     const badge = getStatusBadgeConfig(data.newStatus);
     const shortId = data.bookingId.length > 8 ? data.bookingId.slice(0, 8).toUpperCase() : data.bookingId;
+
+    const plainText = `
+LAXMI MOTOR DRIVING TRAINING SCHOOL - BOOKING STATUS UPDATE
+Government Approved Driving School · Rohtak, Haryana
+
+Namaste ${data.customerName},
+
+The status of your driving training booking has been updated.
+
+CURRENT STATUS: ${badge.label}
+${badge.message}
+
+BOOKING DETAILS:
+------------------------------------------
+• Booking Reference: #${shortId}
+${data.vehicleType ? `• Vehicle Training: ${data.vehicleType}\n` : ""}${data.preferredDate ? `• Scheduled Date: ${data.preferredDate} ${data.preferredTime || ""}\n` : ""}${data.mobile ? `• Contact Mobile: ${data.mobile}\n` : ""}
+NEED HELP?
+• Phone: +91 94160 55858
+• WhatsApp: +91 94160 55858
+• Website: https://laxmidriving.com
+
+Thank you,
+Laxmi Motor Driving Training School
+`;
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -183,7 +214,7 @@ export const sendBookingStatusEmail = createServerFn({ method: "POST" })
                 <p style="margin: 0 0 12px; font-size: 13px; color: #64748b; line-height: 1.5;">
                   Our support team is happy to assist you anytime via Phone or WhatsApp.
                 </p>
-                <div style="display: flex; gap: 12px;">
+                <div>
                   <a href="tel:+919416055858" style="display: inline-block; background-color: #1E40E7; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; margin-right: 8px;">
                     Call: +91 94160 55858
                   </a>
@@ -222,50 +253,72 @@ export const sendBookingStatusEmail = createServerFn({ method: "POST" })
     try {
       const info = await transporter.sendMail({
         from: `"Laxmi Motor Driving School" <${user}>`,
+        replyTo: user,
         to: data.customerEmail,
         subject: `Booking Update: Your training booking is ${badge.label} | Laxmi Driving School`,
+        text: plainText,
         html: htmlContent,
       });
 
-      console.log(`[Email Sent] MessageId: ${info.messageId} to ${data.customerEmail}`);
+      console.log(`[Status Email Sent] MessageId: ${info.messageId} to ${data.customerEmail}`);
       return { success: true, messageId: info.messageId };
     } catch (err: unknown) {
-      console.error("[Email Send Error]", err);
+      console.error("[Status Email Send Error]", err);
       const message = err instanceof Error ? err.message : "Failed to send email notification.";
       return { success: false, error: message };
     }
   });
 
+// 2. Customer completes a new booking on /book
 const newBookingConfirmationSchema = z.object({
-  bookingRef: z.string(),
-  customerName: z.string(),
-  customerEmail: z.string().email(),
-  mobile: z.string(),
-  vehicleType: z.string(),
-  experience: z.string(),
-  date: z.string(),
-  time: z.string(),
-  message: z.string().optional(),
-  paymentChoice: z.string().optional(),
+  bookingRef: z.string().default("REF"),
+  customerName: z.string().default("Learner"),
+  customerEmail: z.string().trim(),
+  mobile: z.string().default(""),
+  vehicleType: z.string().default("Training"),
+  experience: z.string().default("Beginner"),
+  date: z.string().default(""),
+  time: z.string().default(""),
+  message: z.string().nullish().default(""),
+  paymentChoice: z.string().nullish().default("Cash"),
 });
 
 export const sendNewBookingConfirmationEmail = createServerFn({ method: "POST" })
   .validator((data: unknown) => newBookingConfirmationSchema.parse(data))
   .handler(async ({ data }) => {
-    const host = process.env["NODEMAILER_HOST"] || "smtp.gmail.com";
-    const port = Number(process.env["NODEMAILER_PORT"] || 587);
-    const user = process.env["NODEMAILER_EMAIL"] || "frameflicks00@gmail.com";
-    const pass = process.env["NODEMAILER_PASSWORD"] || "rxed baqr gfib fjac";
+    const { user, transporter } = getTransporter();
 
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: {
-        user,
-        pass,
-      },
-    });
+    const plainText = `
+LAXMI MOTOR DRIVING TRAINING SCHOOL - BOOKING CONFIRMATION
+Government Approved Driving School · Rohtak, Haryana
+
+Namaste ${data.customerName},
+
+Thank you for choosing Laxmi Motor Driving Training School! Your driving training enquiry has been received and confirmed.
+
+YOUR BOOKING DETAILS:
+------------------------------------------------
+• Booking Reference: #${data.bookingRef}
+• Vehicle Training: ${data.vehicleType} Training
+• Experience Level: ${data.experience}
+• Preferred Date & Time: ${data.date} at ${data.time}
+• Contact Mobile: ${data.mobile}
+• Payment Preference: ${data.paymentChoice || "Cash"}
+${data.message ? `• Special Notes: ${data.message}\n` : ""}
+WHAT HAPPENS NEXT?
+1. Instructor Call: Our senior trainer will call you shortly on ${data.mobile} to confirm your batch timing and pickup point.
+2. Practice Vehicles: Certified dual-control training cars, bike track cones & safety gear.
+3. Licence Assistance: Complete guidance on learner licence and permanent licence RTO test.
+
+NEED HELP?
+• Phone / Helpline: +91 94160 55858
+• WhatsApp: +91 94160 55858
+• Website: https://laxmidriving.com
+
+Thank you,
+Laxmi Motor Driving Training School
+Near Old Bus Stand / Ground, Rohtak, Haryana
+`;
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -363,18 +416,14 @@ export const sendNewBookingConfirmationEmail = createServerFn({ method: "POST" }
                     ${data.mobile}
                   </td>
                 </tr>
-                ${
-                  data.paymentChoice
-                    ? `<tr>
+                <tr>
                   <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
                     Payment Preference
                   </td>
                   <td style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
-                    ${data.paymentChoice}
+                    ${data.paymentChoice || "Cash / Pay after confirmation"}
                   </td>
-                </tr>`
-                    : ""
-                }
+                </tr>
                 ${
                   data.message
                     ? `<tr>
@@ -397,7 +446,7 @@ export const sendNewBookingConfirmationEmail = createServerFn({ method: "POST" }
                 <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #475569; line-height: 1.7;">
                   <li><strong>Instructor Call:</strong> Our senior trainer will call you shortly on <strong>${data.mobile}</strong> to confirm your batch and pick-up point.</li>
                   <li><strong>Practice Vehicles:</strong> Certified dual-control cars, bike track cones & safety gear.</li>
-                  <li><strong>Licence Assistance:</strong> Complete guidance on learner licence and RTO driving test.</li>
+                  <li><strong>Licence Assistance:</strong> Complete guidance on learner licence and permanent licence RTO test.</li>
                 </ul>
               </div>
 
@@ -448,9 +497,11 @@ export const sendNewBookingConfirmationEmail = createServerFn({ method: "POST" }
     try {
       const info = await transporter.sendMail({
         from: `"Laxmi Motor Driving School" <${user}>`,
+        replyTo: user,
         to: data.customerEmail,
         bcc: user,
-        subject: `🚗 Booking Confirmed: Your ${data.vehicleType} Driving Training [Ref: #${data.bookingRef}]`,
+        subject: `Booking Confirmed: Your ${data.vehicleType} Driving Training [Ref: #${data.bookingRef}]`,
+        text: plainText,
         html: htmlContent,
       });
 

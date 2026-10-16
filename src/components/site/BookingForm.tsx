@@ -37,7 +37,9 @@ function validate(v: BookingValues): Errors {
   if (v.fullName.trim().length < 3) e.fullName = "Please enter your full name.";
   if (!/^[6-9]\d{9}$/.test(v.mobile.replace(/\D/g, "").slice(-10)))
     e.mobile = "Enter a valid 10-digit Indian mobile number.";
-  if (v.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim()))
+  if (!v.email.trim())
+    e.email = "Please enter your email to receive booking confirmation.";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim()))
     e.email = "Enter a valid e-mail ID, for example name@gmail.com.";
   if (!v.vehicleType) e.vehicleType = "Please choose Car, Auto, Bike or Scooter.";
   if (!v.experience) e.experience = "Please choose your experience level.";
@@ -97,26 +99,31 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
       await submitBooking(values);
       const generatedRef = "LDT-BK-" + Math.floor(100000 + Math.random() * 900000);
       setBookingRef(generatedRef);
-      setStatus("done");
 
+      // Await email delivery so server function completes reliably
       if (values.email && values.email.trim() && values.email.includes("@")) {
-        sendNewBookingConfirmationEmail({
-          data: {
-            bookingRef: generatedRef,
-            customerName: values.fullName.trim(),
-            customerEmail: values.email.trim(),
-            mobile: values.mobile.trim(),
-            vehicleType: values.vehicleType,
-            experience: values.experience,
-            date: values.date,
-            time: values.time,
-            message: values.message.trim() || undefined,
-            paymentChoice: values.paymentChoice,
-          },
-        }).catch((err: unknown) => {
+        try {
+          const res = await sendNewBookingConfirmationEmail({
+            data: {
+              bookingRef: generatedRef,
+              customerName: values.fullName.trim(),
+              customerEmail: values.email.trim().toLowerCase(),
+              mobile: values.mobile.trim(),
+              vehicleType: values.vehicleType,
+              experience: values.experience,
+              date: values.date,
+              time: values.time,
+              message: values.message.trim() || undefined,
+              paymentChoice: values.paymentChoice || "Cash",
+            },
+          });
+          console.log("[Booking Confirmation Email Result]", res);
+        } catch (err: unknown) {
           console.error("Booking confirmation email dispatch error:", err);
-        });
+        }
       }
+
+      setStatus("done");
     } catch {
       setSubmitError("Your request could not be saved. Please try again or call us.");
       setStatus("idle");
@@ -153,9 +160,14 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
             Booking Reference ID: <strong className="font-mono text-primary font-bold">{bookingRef}</strong>
           </p>
           {values.email && values.email.trim() && (
-            <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-              ✉️ A confirmation email with complete booking details has been sent to <strong>{values.email}</strong>.
-            </p>
+            <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-800 dark:text-emerald-200 text-left max-w-md mx-auto space-y-1">
+              <p className="font-bold flex items-center gap-1.5 text-sm">
+                <span>✉️</span> Confirmation email sent to {values.email}
+              </p>
+              <p className="text-[11px] text-emerald-700/90 dark:text-emerald-300/90 leading-relaxed">
+                Please check your inbox. If you don't see it within a minute, please check your <strong>Spam / Promotions</strong> folder.
+              </p>
+            </div>
           )}
         </div>
 
@@ -269,13 +281,14 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           />
         </Field>
 
-        <Field label="E-mail ID (for booking confirmation email)" htmlFor="email" error={errors.email}>
+        <Field label="E-mail Address" htmlFor="email" error={errors.email} required>
           <input
             id="email"
             name="email"
             type="email"
+            required
             className={fieldClass}
-            placeholder="name@gmail.com (receive instant confirmation email)"
+            placeholder="yourname@gmail.com (receives instant confirmation email)"
             autoComplete="email"
             value={values.email}
             data-invalid={Boolean(errors.email)}
