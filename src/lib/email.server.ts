@@ -285,8 +285,8 @@ const newBookingConfirmationSchema = z.object({
   experience: z.string().default("Beginner"),
   date: z.string().default(""),
   time: z.string().default(""),
-  message: z.string().nullish().default(""),
-  paymentChoice: z.string().nullish().default("Cash"),
+  message: z.string().default(""),
+  paymentChoice: z.string().default("Cash"),
 });
 
 export const sendNewBookingConfirmationEmail = createServerFn({ method: "POST" })

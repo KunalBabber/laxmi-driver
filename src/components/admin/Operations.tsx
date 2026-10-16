@@ -203,22 +203,55 @@ function BookingRow({
             update({ status: newStatus });
             if (b.email && b.email.trim() !== "" && b.email.includes("@")) {
               try {
-                const res = await sendBookingStatusEmail({
-                  data: {
-                    bookingId: b.id,
-                    customerEmail: b.email.trim(),
-                    customerName: b.full_name || "Learner",
-                    newStatus,
-                    vehicleType: b.vehicle_type,
-                    preferredDate: b.preferred_date,
-                    preferredTime: b.preferred_time,
-                    mobile: b.mobile,
-                  },
-                });
-                if (res.success) {
+                const payload = {
+                  bookingId: b.id,
+                  customerEmail: b.email.trim(),
+                  customerName: b.full_name || "Learner",
+                  newStatus,
+                  vehicleType: b.vehicle_type || "",
+                  preferredDate: b.preferred_date || "",
+                  preferredTime: b.preferred_time || "",
+                  mobile: b.mobile || "",
+                };
+
+                let emailSuccess = false;
+                let errorMsg = "";
+
+                // 1. Direct API call
+                try {
+                  const apiRes = await fetch("/api/send-booking-status", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  });
+                  const json = await apiRes.json().catch(() => null);
+                  if (json?.success) {
+                    emailSuccess = true;
+                  } else if (json?.error) {
+                    errorMsg = json.error;
+                  }
+                } catch (e: unknown) {
+                  console.warn("Direct status email error:", e);
+                }
+
+                // 2. Server function fallback
+                if (!emailSuccess) {
+                  try {
+                    const fnRes = await sendBookingStatusEmail({ data: payload });
+                    if (fnRes.success) {
+                      emailSuccess = true;
+                    } else if (fnRes.error) {
+                      errorMsg = fnRes.error;
+                    }
+                  } catch (fnErr: unknown) {
+                    console.warn("ServerFn status email fallback error:", fnErr);
+                  }
+                }
+
+                if (emailSuccess) {
                   toast.success(`Booking status changed to "${newStatus}" and email notification sent to ${b.email}!`);
                 } else {
-                  toast.warning(`Status updated to "${newStatus}", but email notification failed: ${res.error}`);
+                  toast.warning(`Status updated to "${newStatus}", but email notification failed: ${errorMsg || "check server logs"}`);
                 }
               } catch (err: unknown) {
                 console.error("Status update email error:", err);

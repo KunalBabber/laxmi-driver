@@ -37,9 +37,7 @@ function validate(v: BookingValues): Errors {
   if (v.fullName.trim().length < 3) e.fullName = "Please enter your full name.";
   if (!/^[6-9]\d{9}$/.test(v.mobile.replace(/\D/g, "").slice(-10)))
     e.mobile = "Enter a valid 10-digit Indian mobile number.";
-  if (!v.email.trim())
-    e.email = "Please enter your email to receive booking confirmation.";
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim()))
+  if (v.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim()))
     e.email = "Enter a valid e-mail ID, for example name@gmail.com.";
   if (!v.vehicleType) e.vehicleType = "Please choose Car, Auto, Bike or Scooter.";
   if (!v.experience) e.experience = "Please choose your experience level.";
@@ -113,26 +111,50 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
       const generatedRef = "LDT-BK-" + Math.floor(100000 + Math.random() * 900000);
       setBookingRef(generatedRef);
 
-      // Await email delivery so server function completes reliably
-      if (values.email && values.email.trim() && values.email.includes("@")) {
+      // Only dispatch confirmation email if the learner provided an email address
+      const trimmedEmail = values.email.trim().toLowerCase();
+      if (trimmedEmail && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmedEmail)) {
         try {
-          const res = await sendNewBookingConfirmationEmail({
-            data: {
-              bookingRef: generatedRef,
-              customerName: values.fullName.trim(),
-              customerEmail: values.email.trim().toLowerCase(),
-              mobile: values.mobile.trim(),
-              vehicleType: values.vehicleType,
-              experience: values.experience,
-              date: values.date,
-              time: values.time,
-              message: values.message.trim() || undefined,
-              paymentChoice: values.paymentChoice || "Cash",
-            },
-          });
-          console.log("[Booking Confirmation Email Result]", res);
-          if (!res?.success) {
-            console.warn("Booking confirmation email notice:", res?.error);
+          const payload = {
+            bookingRef: generatedRef,
+            customerName: values.fullName.trim(),
+            customerEmail: trimmedEmail,
+            mobile: values.mobile.trim(),
+            vehicleType: values.vehicleType || "Training",
+            experience: values.experience || "Beginner",
+            date: values.date || "",
+            time: values.time || "",
+            message: values.message.trim() || "",
+            paymentChoice: values.paymentChoice || "Pay after confirmation",
+          };
+
+          let sent = false;
+          // 1. Primary: Direct API endpoint
+          try {
+            const apiRes = await fetch("/api/send-booking-confirmation", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const jsonRes = await apiRes.json().catch(() => null);
+            console.log("[Booking Confirmation Email Result]", jsonRes);
+            if (jsonRes?.success) {
+              sent = true;
+            }
+          } catch (apiErr) {
+            console.warn("Direct email API call error:", apiErr);
+          }
+
+          // 2. Fallback: Server function
+          if (!sent) {
+            try {
+              const res = await sendNewBookingConfirmationEmail({
+                data: payload,
+              });
+              console.log("[Booking Confirmation ServerFn Result]", res);
+            } catch (fnErr) {
+              console.warn("Server function fallback error:", fnErr);
+            }
           }
         } catch (err: unknown) {
           console.error("Booking confirmation email dispatch error:", err);
@@ -181,7 +203,7 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           <p className="mt-1 text-xs text-muted-foreground">
             Booking Reference ID: <strong className="font-mono text-primary font-bold">{bookingRef}</strong>
           </p>
-          {values.email && values.email.trim() && (
+          {values.email && values.email.trim() ? (
             <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-800 dark:text-emerald-200 text-left max-w-md mx-auto space-y-1">
               <p className="font-bold flex items-center gap-1.5 text-sm">
                 <span>✉️</span> Confirmation email sent to {values.email}
@@ -190,6 +212,10 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
                 Please check your inbox. If you don't see it within a minute, please check your <strong>Spam / Promotions</strong> folder.
               </p>
             </div>
+          ) : (
+            <p className="mt-3 text-xs text-muted-foreground max-w-md mx-auto">
+              📞 Our instructor will call you on <strong>{values.mobile}</strong> to confirm your schedule and pickup.
+            </p>
           )}
         </div>
 
@@ -303,14 +329,13 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           />
         </Field>
 
-        <Field label="E-mail Address" htmlFor="email" error={errors.email} required>
+        <Field label="E-mail Address (Optional)" htmlFor="email" error={errors.email}>
           <input
             id="email"
             name="email"
             type="email"
-            required
             className={fieldClass}
-            placeholder="yourname@gmail.com (receives instant confirmation email)"
+            placeholder="yourname@gmail.com (enter to receive confirmation email)"
             autoComplete="email"
             value={values.email}
             data-invalid={Boolean(errors.email)}
