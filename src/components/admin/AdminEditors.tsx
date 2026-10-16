@@ -29,6 +29,8 @@ export function BookingEditor({ booking }: { booking: Booking }) {
           preferred_time: draft.preferred_time,
           message: draft.message || null,
           staff_notes: draft.staff_notes || null,
+          payment_status: draft.payment_status,
+          amount: draft.amount,
         })
         .eq("id", booking.id)
         .select("id")
@@ -114,6 +116,41 @@ export function BookingEditor({ booking }: { booking: Booking }) {
                 type="time"
                 value={draft.preferred_time.slice(0, 5)}
                 onChange={(e) => setDraft({ ...draft, preferred_time: e.target.value })}
+              />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="grid gap-1 text-sm font-medium">
+              Payment status
+              <select
+                className="h-10 rounded border border-input bg-background px-2 text-sm"
+                value={draft.payment_status}
+                onChange={(e) => {
+                  const newStatus = e.target.value;
+                  setDraft({
+                    ...draft,
+                    payment_status: newStatus,
+                    ...(newStatus === "Paid" && (!draft.amount || draft.amount === 0) ? { amount: 500 } : {}),
+                    ...(newStatus === "Unpaid" && draft.amount === 500 ? { amount: null } : {}),
+                  });
+                }}
+              >
+                {["Unpaid", "Pending verification", "Paid", "Refunded"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Amount (₹)
+              <Input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={draft.amount ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value === "" ? null : Number(e.target.value);
+                  setDraft({ ...draft, amount: val });
+                }}
               />
             </label>
           </div>

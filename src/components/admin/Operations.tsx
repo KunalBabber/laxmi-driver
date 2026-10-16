@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { BookingEditor, InstructorEditor } from "@/components/admin/AdminEditors";
 import { downloadCsv } from "@/lib/admin-export";
@@ -121,6 +121,48 @@ function SelectField({
     </label>
   );
 }
+function PaymentAmountInput({
+  initialAmount,
+  onSave,
+  disabled = false,
+}: {
+  initialAmount: number | null;
+  onSave: (amount: number | null) => void;
+  disabled?: boolean;
+}) {
+  const [val, setVal] = useState<string>(initialAmount != null ? String(initialAmount) : "");
+
+  useEffect(() => {
+    setVal(initialAmount != null ? String(initialAmount) : "");
+  }, [initialAmount]);
+
+  const commit = () => {
+    const trimmed = val.trim();
+    const parsed = trimmed === "" ? null : Number(trimmed);
+    if (parsed !== initialAmount && (parsed === null || (Number.isInteger(parsed) && parsed >= 0))) {
+      onSave(parsed);
+    }
+  };
+
+  return (
+    <Input
+      type="number"
+      min="0"
+      className="h-9 w-28 font-medium"
+      value={val}
+      placeholder="0"
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      disabled={disabled}
+    />
+  );
+}
 function LoadState({ error, loading }: { error: unknown; loading: boolean }) {
   if (loading)
     return (
@@ -185,7 +227,17 @@ function BookingRow({
         <p className="text-xs text-muted-foreground">
           {b.email} · {b.preferred_date} at {b.preferred_time.slice(0, 5)}
         </p>
-        {b.message && <p className="mt-1 text-sm">{b.message}</p>}
+        {b.message && (
+          <div className="mt-1">
+            {b.message.includes("PAID") || b.message.includes("Razorpay") ? (
+              <span className="inline-block rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                {b.message}
+              </span>
+            ) : (
+              <p className="text-sm">{b.message}</p>
+            )}
+          </div>
+        )}
         {b.staff_notes && (
           <p className="mt-2 text-xs text-muted-foreground">Staff notes: {b.staff_notes}</p>
         )}
@@ -287,35 +339,69 @@ function BookingRow({
           disabled={save.isPending}
         />
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-start gap-2">
         <SelectField
           label="Payment"
           value={b.payment_status}
           choices={paymentStates}
-          onChange={(payment_status) => update({ payment_status })}
+          onChange={(payment_status) => {
+            if (payment_status === b.payment_status) return;
+            if (payment_status === "Paid" && (!b.amount || b.amount === 0)) {
+              update({ payment_status: "Paid", amount: 500 });
+            } else if (payment_status === "Unpaid") {
+              update({ payment_status: "Unpaid", amount: null });
+            } else {
+              update({ payment_status });
+            }
+          }}
           disabled={save.isPending}
         />
         <div className="grid gap-1 text-xs font-semibold text-muted-foreground">
           Amount (₹)
-          <Input
-            aria-label={`Amount for ${b.full_name}`}
-            type="number"
-            min="0"
-            className="h-9 w-28"
-            defaultValue={b.amount ?? ""}
-            onBlur={(e) => {
-              const amount = e.target.value === "" ? null : Number(e.target.value);
-              if (
-                amount !== b.amount &&
-                (amount === null || (Number.isInteger(amount) && amount >= 0))
-              )
-                update({ amount });
-            }}
+          <PaymentAmountInput
+            initialAmount={b.amount}
+            onSave={(amount) => update({ amount })}
+            disabled={save.isPending}
           />
         </div>
-        <p className="basis-full text-xs text-muted-foreground">
-          Preferred: {b.payment_choice}. No online charge has been processed.
-        </p>
+
+        {b.payment_status !== "Paid" && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-5 h-9 text-xs border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950 font-semibold"
+            disabled={save.isPending}
+            onClick={() =>
+              update({
+                payment_status: "Paid",
+                amount: b.amount && b.amount > 0 ? b.amount : 500,
+              })
+            }
+          >
+            ✓ Mark ₹500 Paid
+          </Button>
+        )}
+
+        <div className="basis-full text-xs text-muted-foreground mt-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span>Preference: <strong className="text-foreground font-medium">{b.payment_choice}</strong></span>
+            <span>·</span>
+            {b.payment_status === "Paid" ? (
+              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                ✓ Verified Paid: ₹{(b.amount ?? 500).toLocaleString("en-IN")}
+              </span>
+            ) : b.payment_status === "Pending verification" ? (
+              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                ⏳ Payment Pending Verification
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                Payment Status: Unpaid
+              </span>
+            )}
+          </div>
+        </div>
       </div>
     </article>
   );

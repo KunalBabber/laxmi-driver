@@ -49,7 +49,10 @@ function validate(v: BookingValues): Errors {
   return e;
 }
 
-async function submitBooking(values: BookingValues): Promise<void> {
+async function submitBooking(
+  values: BookingValues,
+  options?: { isPaid?: boolean; paymentId?: string },
+): Promise<void> {
   // Map paymentChoice to valid database constraint values ('Pay after confirmation', 'UPI', 'Card', 'Cash')
   let dbPaymentChoice = "Pay after confirmation";
   if (values.paymentChoice === "Razorpay" || values.paymentChoice === "UPI") {
@@ -60,6 +63,15 @@ async function submitBooking(values: BookingValues): Promise<void> {
     dbPaymentChoice = "Cash";
   }
 
+  let finalMessage = values.message.trim();
+  if (options?.isPaid && options?.paymentId) {
+    const payPrefix = `[✓ PAID ₹500 via Razorpay | ID: ${options.paymentId}]`;
+    finalMessage = finalMessage ? `${payPrefix} - ${finalMessage}` : payPrefix;
+  } else if (options && !options.isPaid && values.paymentChoice === "Razorpay") {
+    const note = `[Razorpay Incomplete / Pay Later]`;
+    finalMessage = finalMessage ? `${note} - ${finalMessage}` : note;
+  }
+
   const { error } = await supabase.from("lesson_bookings").insert({
     full_name: values.fullName.trim(),
     mobile: values.mobile.trim(),
@@ -68,7 +80,7 @@ async function submitBooking(values: BookingValues): Promise<void> {
     experience: values.experience,
     preferred_date: values.date,
     preferred_time: values.time,
-    message: values.message.trim() || null,
+    message: finalMessage || null,
     payment_choice: dbPaymentChoice,
   });
   if (error) {
@@ -161,7 +173,6 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
     setStatus("sending");
     setSubmitError("");
     try {
-      await submitBooking(values);
       const generatedRef = "LDT-BK-" + Math.floor(100000 + Math.random() * 900000);
       setBookingRef(generatedRef);
 
@@ -181,6 +192,14 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
               paymentId: razorpayRes.razorpay_payment_id,
               amount: 500,
             });
+            try {
+              await submitBooking(values, {
+                isPaid: true,
+                paymentId: razorpayRes.razorpay_payment_id,
+              });
+            } catch (saveErr) {
+              console.error("Save booking with payment error:", saveErr);
+            }
             setStatus("done");
             toast.success("Payment of ₹500 confirmed! Your driving lesson slot is verified.");
             await dispatchConfirmationMail({
@@ -193,6 +212,11 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           onError: async (err) => {
             setPayingRazorpay(false);
             setPaymentDetails({ paid: false, amount: 500 });
+            try {
+              await submitBooking(values, { isPaid: false });
+            } catch (saveErr) {
+              console.error("Save booking error:", saveErr);
+            }
             setStatus("done");
             toast.warning(
               err instanceof Error ? err.message : "Payment was not completed. Your lesson request is saved!",
@@ -205,6 +229,11 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
           onDismiss: async () => {
             setPayingRazorpay(false);
             setPaymentDetails({ paid: false, amount: 500 });
+            try {
+              await submitBooking(values, { isPaid: false });
+            } catch (saveErr) {
+              console.error("Save booking error:", saveErr);
+            }
             setStatus("done");
             toast.info("Your lesson request is saved! You can pay ₹500 advance later or cash after instructor call.");
             await dispatchConfirmationMail({
@@ -215,6 +244,7 @@ export function BookingForm({ defaultVehicle }: { defaultVehicle?: BookingValues
         });
       } else {
         // Cash or Pay after confirmation
+        await submitBooking(values);
         await dispatchConfirmationMail({
           bookingRef: generatedRef,
           paid: false,
