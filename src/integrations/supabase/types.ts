@@ -474,7 +474,7 @@ export type Database = {
         | "Active"
         | "Suspended";
       partner_ownership: "Individual Owner" | "Business Owner" | "Company/Fleet Owner";
-      partner_payment_status: "Pending" | "Paid" | "Under Verification" | "Verified" | "Refunded";
+      partner_payment_status: "Pending" | "Paid" | "Under Verification" | "Verified" | "Refunded" | "Unpaid";
       partner_vehicle_type: "Car" | "Motorcycle" | "Scooter";
     };
     CompositeTypes: {
@@ -612,7 +612,7 @@ export const Constants = {
         "Suspended",
       ],
       partner_ownership: ["Individual Owner", "Business Owner", "Company/Fleet Owner"],
-      partner_payment_status: ["Pending", "Paid", "Under Verification", "Verified", "Refunded"],
+      partner_payment_status: ["Pending", "Paid", "Under Verification", "Verified", "Refunded", "Unpaid"],
       partner_vehicle_type: ["Car", "Motorcycle", "Scooter"],
     },
   },

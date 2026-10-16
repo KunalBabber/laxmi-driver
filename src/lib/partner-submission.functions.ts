@@ -88,6 +88,8 @@ export const savePartnerDraft = createServerFn({ method: "POST" })
           user_id: context.userId,
           status: "Draft",
           terms_accepted: false,
+          payment_status: "Pending",
+          deposit_amount: 2000,
         });
     const { data: app, error } = await query.select("id,application_no").single();
     if (error || !app) {
